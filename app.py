@@ -86,12 +86,17 @@ def automated_eda_agent(df):
 # ------------------------
 @app.route("/", methods=["GET", "POST"])
 def index():
+    # Default state (always visible)
     insights = []
-    agent_steps = []
+    agent_steps = ["⏳ Agent waiting for dataset upload..."]
     plots = []
 
     if request.method == "POST":
-        file = request.files["file"]
+        # Clear old plots to avoid stale data
+        for f in os.listdir(PLOT_FOLDER):
+            os.remove(os.path.join(PLOT_FOLDER, f))
+
+        file = request.files.get("file")
         if file:
             filepath = os.path.join(UPLOAD_FOLDER, file.filename)
             file.save(filepath)
