@@ -15,78 +15,101 @@ os.makedirs(PLOT_FOLDER, exist_ok=True)
 
 def automated_eda_agent(df):
     insights = []
+    agent_steps = []
 
-    # -------- Agent Reasoning (Level 1) --------
-    insights.append("🧠 Agent initialized and waiting for trigger")
-    insights.append("🔍 Reading and understanding dataset structure")
+    # ---------------- Agent reasoning ----------------
+    agent_steps.append("🔍 Reading and understanding dataset structure")
+    insights.append(f"The dataset contains {df.shape[0]} rows and {df.shape[1]} columns.")
 
-    insights.append(
-        f"The dataset contains {df.shape[0]} rows and {df.shape[1]} columns."
-    )
-
-    insights.append("🧪 Checking for missing values")
+    agent_steps.append("🧪 Checking for missing values")
     missing = df.isnull().sum()
-    if missing.sum() > 0:
-        insights.append("Some columns contain missing values.")
-    else:
+    if missing.sum() == 0:
         insights.append("No missing values were found in the dataset.")
+    else:
+        insights.append("Some columns contain missing values.")
 
-    insights.append("📊 Evaluating dataset quality")
+    # ---------------- Dataset quality ----------------
+    agent_steps.append("📊 Evaluating dataset quality")
     score = 100
-    missing_ratio = missing.sum() / (df.shape[0] * df.shape[1])
-    score -= int(missing_ratio * 100)
-
-    duplicates = df.duplicated().sum()
-    if duplicates > 0:
-        score -= min(20, duplicates)
-
+    score -= int((missing.sum() / (df.shape[0] * df.shape[1])) * 100)
+    score -= min(20, df.duplicated().sum())
     score = max(score, 0)
     insights.insert(0, f"📊 Dataset Quality Score: {score} / 100")
 
-    insights.append("📊 Identifying numerical features")
-    numeric_cols = df.select_dtypes(include="number").columns
+    # ---------------- Feature analysis ----------------
+    agent_steps.append("📊 Identifying feature types")
 
-    insights.append("📈 Generating distribution plots")
+    numeric_cols = df.select_dtypes(include="number").columns
+    categorical_cols = df.select_dtypes(include="object").columns
+    datetime_cols = df.select_dtypes(include="datetime").columns
+
+    agent_steps.append("📈 Generating adaptive visualizations")
+
+    # Clear old plots
+    for f in os.listdir(PLOT_FOLDER):
+        os.remove(os.path.join(PLOT_FOLDER, f))
+
+    # Numeric features
     for col in numeric_cols:
         plt.figure()
-        sns.histplot(df[col].dropna(), kde=True)
-        plt.savefig(f"{PLOT_FOLDER}/{col}_hist.png")
-        plt.close()
-        insights.append(f"Column '{col}' shows its distribution as plotted.")
+        unique_vals = df[col].nunique()
 
+        if unique_vals <= 2:
+            sns.countplot(x=df[col])
+            insights.append(f"Binary feature '{col}' visualized using a count plot.")
+        else:
+            sns.histplot(df[col].dropna(), kde=True)
+            insights.append(f"Numeric feature '{col}' visualized using a histogram.")
+
+        plt.title(col)
+        plt.savefig(f"{PLOT_FOLDER}/{col}.png")
+        plt.close()
+
+    # Categorical features
+    for col in categorical_cols:
+        if df[col].nunique() <= 10:
+            plt.figure()
+            df[col].value_counts().plot(kind="bar")
+            plt.title(col)
+            plt.savefig(f"{PLOT_FOLDER}/{col}.png")
+            plt.close()
+            insights.append(f"Categorical feature '{col}' visualized using a bar chart.")
+
+    # Correlation
     if len(numeric_cols) > 1:
-        insights.append("🔗 Performing correlation analysis")
+        agent_steps.append("🔗 Performing correlation analysis")
         plt.figure(figsize=(6, 4))
         sns.heatmap(df[numeric_cols].corr(), annot=True, cmap="coolwarm")
+        plt.title("Correlation Heatmap")
         plt.savefig(f"{PLOT_FOLDER}/correlation.png")
         plt.close()
         insights.append("Correlation analysis was performed on numerical features.")
 
-    insights.append("✅ Automated EDA completed successfully")
+    agent_steps.append("✅ Automated EDA completed")
 
-    return insights
+    return insights, agent_steps
 
 
 @app.route("/", methods=["GET", "POST"])
 def index():
     insights = []
+    agent_steps = ["⏳ Agent waiting for dataset upload..."]
     plots = []
 
     if request.method == "POST":
-        for f in os.listdir(PLOT_FOLDER):
-            os.remove(os.path.join(PLOT_FOLDER, f))
-
         file = request.files.get("file")
         if file:
             path = os.path.join(UPLOAD_FOLDER, file.filename)
             file.save(path)
             df = pd.read_csv(path)
-            insights = automated_eda_agent(df)
+
+            insights, agent_steps = automated_eda_agent(df)
             plots = os.listdir(PLOT_FOLDER)
 
     return render_template(
         "index.html",
         insights=insights,
+        agent_steps=agent_steps,
         plots=plots
     )
 
